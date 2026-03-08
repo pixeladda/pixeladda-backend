@@ -157,6 +157,7 @@ router.post(
         category,
         price,
         isFree: isFree === "true" || isFree === true,
+        isActive: true,
         previewImages,
         previewVideo: previewVideoKey,
         fileKey,
