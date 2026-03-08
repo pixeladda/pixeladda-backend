@@ -110,25 +110,29 @@ router.post(
           previewImages.push(imageKey);
         }
       }
-      // If no preview images and file is a video, generate thumbnail and preview video automatically
-      else if (isVideoFile(file.originalname)) {
+
+      // ALWAYS generate preview video for video files, even if preview images exist
+      if (isVideoFile(file.originalname)) {
         try {
-          console.log("Generating thumbnail for video:", file.originalname);
-          const thumbnailBuffer = await generateVideoThumbnail(
-            file.buffer,
-            file.originalname,
-          );
+          // Generate thumbnail if no preview images were provided
+          if (previewImages.length === 0) {
+            console.log("Generating thumbnail for video:", file.originalname);
+            const thumbnailBuffer = await generateVideoThumbnail(
+              file.buffer,
+              file.originalname,
+            );
 
-          // Create a thumbnail object to upload
-          const thumbnail = {
-            buffer: thumbnailBuffer,
-            originalname: `thumbnail_${Date.now()}.jpg`,
-            mimetype: "image/jpeg",
-          };
+            // Create a thumbnail object to upload
+            const thumbnail = {
+              buffer: thumbnailBuffer,
+              originalname: `thumbnail_${Date.now()}.jpg`,
+              mimetype: "image/jpeg",
+            };
 
-          const thumbnailKey = await uploadToR2(thumbnail, "previews");
-          previewImages.push(thumbnailKey);
-          console.log("Video thumbnail generated successfully");
+            const thumbnailKey = await uploadToR2(thumbnail, "previews");
+            previewImages.push(thumbnailKey);
+            console.log("Video thumbnail generated successfully");
+          }
 
           // Generate 5-second preview video
           console.log("Generating 5-second preview video...");
@@ -147,6 +151,7 @@ router.post(
           console.log("Preview video generated successfully");
         } catch (error) {
           console.error("Error generating video preview:", error);
+          console.error("Error details:", error.stack);
           // Continue without preview - not critical
         }
       }
@@ -214,31 +219,53 @@ router.put(
         }
         updateData.previewImages = previewImages;
       }
-      // If updating file to a video and no preview images provided, generate thumbnail
-      else if (
+
+      // Generate preview for video files when updating
+      if (
         req.files &&
         req.files.file &&
         req.files.file[0] &&
         isVideoFile(req.files.file[0].originalname)
       ) {
         try {
-          console.log("Generating thumbnail for updated video");
-          const thumbnailBuffer = await generateVideoThumbnail(
+          // Generate thumbnail if no preview images were uploaded
+          if (!req.files.previewImages) {
+            console.log("Generating thumbnail for updated video");
+            const thumbnailBuffer = await generateVideoThumbnail(
+              req.files.file[0].buffer,
+              req.files.file[0].originalname,
+            );
+
+            const thumbnail = {
+              buffer: thumbnailBuffer,
+              originalname: `thumbnail_${Date.now()}.jpg`,
+              mimetype: "image/jpeg",
+            };
+
+            const thumbnailKey = await uploadToR2(thumbnail, "previews");
+            updateData.previewImages = [thumbnailKey];
+            console.log("Video thumbnail generated successfully");
+          }
+
+          // Generate preview video
+          console.log("Generating 5-second preview video for update...");
+          const previewVideoBuffer = await generateVideoPreview(
             req.files.file[0].buffer,
             req.files.file[0].originalname,
           );
 
-          const thumbnail = {
-            buffer: thumbnailBuffer,
-            originalname: `thumbnail_${Date.now()}.jpg`,
-            mimetype: "image/jpeg",
+          const previewVideo = {
+            buffer: previewVideoBuffer,
+            originalname: `preview_${Date.now()}.mp4`,
+            mimetype: "video/mp4",
           };
 
-          const thumbnailKey = await uploadToR2(thumbnail, "previews");
-          updateData.previewImages = [thumbnailKey];
-          console.log("Video thumbnail generated successfully");
+          const previewVideoKey = await uploadToR2(previewVideo, "previews");
+          updateData.previewVideo = previewVideoKey;
+          console.log("Preview video generated successfully");
         } catch (error) {
-          console.error("Error generating video thumbnail:", error);
+          console.error("Error generating video preview:", error);
+          console.error("Error details:", error.stack);
         }
       }
 
