@@ -17,6 +17,10 @@ const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
   : ["*"];
 
+console.log("🔒 CORS Configuration:");
+console.log("   Allowed origins:", allowedOrigins);
+console.log("   Raw CORS_ORIGINS:", process.env.CORS_ORIGINS);
+
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -25,10 +29,11 @@ app.use(
 
       // Check if origin is allowed
       if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+        console.log("✅ CORS allowed for origin:", origin);
         callback(null, true);
       } else {
-        console.log("CORS blocked origin:", origin);
-        console.log("Allowed origins:", allowedOrigins);
+        console.log("❌ CORS blocked origin:", origin);
+        console.log("   Allowed origins:", allowedOrigins);
         callback(new Error("Not allowed by CORS"));
       }
     },
