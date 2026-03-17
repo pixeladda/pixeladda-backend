@@ -61,6 +61,75 @@ router.get("/", async (req, res) => {
   }
 });
 
+// Filter products with advanced options
+router.get("/filter", async (req, res) => {
+  try {
+    const { type, format, price, category } = req.query;
+    const filter = { isActive: true };
+
+    // Filter by product type (vector, raster, video, template, other)
+    if (type) {
+      const types = Array.isArray(type) ? type : [type];
+      filter.productType = { $in: types };
+    }
+
+    // Filter by file format (eps, ai, cdr, psd, jpeg, png, mp4)
+    if (format) {
+      const formats = Array.isArray(format) ? format : [format];
+      filter["files.format"] = { $in: formats.map((f) => f.toUpperCase()) };
+    }
+
+    // Filter by price range
+    if (price) {
+      const prices = Array.isArray(price) ? price : [price];
+      const priceConditions = [];
+
+      prices.forEach((p) => {
+        switch (p) {
+          case "free":
+            priceConditions.push({ isFree: true });
+            break;
+          case "paid":
+            priceConditions.push({ isFree: false });
+            break;
+          case "under100":
+            priceConditions.push({ price: { $lt: 100 }, isFree: false });
+            break;
+          case "under500":
+            priceConditions.push({ price: { $lt: 500 }, isFree: false });
+            break;
+          case "under1000":
+            priceConditions.push({ price: { $lt: 1000 }, isFree: false });
+            break;
+        }
+      });
+
+      if (priceConditions.length > 0) {
+        filter.$or = priceConditions;
+      }
+    }
+
+    // Filter by category
+    if (category) {
+      const categories = Array.isArray(category) ? category : [category];
+      filter.category = { $in: categories };
+    }
+
+    const products = await Product.find(filter)
+      .populate("category", "name slug")
+      .sort({ createdAt: -1 });
+
+    // Add signed URLs to all products
+    const productsWithUrls = await Promise.all(
+      products.map((product) => addSignedUrlsToProduct(product)),
+    );
+
+    res.json(productsWithUrls);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get single product
 router.get("/:id", async (req, res) => {
   try {
@@ -88,71 +157,107 @@ router.post(
   upload.fields([
     { name: "previewImages", maxCount: 5 },
     { name: "file", maxCount: 1 },
+    { name: "epsFile", maxCount: 1 },
+    { name: "aiFile", maxCount: 1 },
+    { name: "cdrFile", maxCount: 1 },
+    { name: "psdFile", maxCount: 1 },
+    { name: "jpegFile", maxCount: 1 },
   ]),
   async (req, res) => {
     try {
-      const { title, description, category, price, isFree } = req.body;
-
-      if (!req.files || !req.files.file || !req.files.file[0]) {
-        return res.status(400).json({ error: "Product file is required" });
-      }
-
-      const file = req.files.file[0];
-      const fileKey = await uploadToR2(file, "products");
+      const { title, description, category, price, isFree, productType } =
+        req.body;
 
       const previewImages = [];
       let previewVideoKey = null;
+      const files = []; // Array to store multiple format files
 
-      // Check if preview images were uploaded
-      if (req.files.previewImages) {
-        for (const image of req.files.previewImages) {
-          const imageKey = await uploadToR2(image, "previews");
-          previewImages.push(imageKey);
+      // Handle multiple file formats (new system)
+      const formatFiles = {
+        epsFile: "EPS",
+        aiFile: "AI",
+        cdrFile: "CDR",
+        psdFile: "PSD",
+        jpegFile: "JPEG",
+      };
+
+      let hasMultipleFormats = false;
+
+      for (const [fieldName, format] of Object.entries(formatFiles)) {
+        if (req.files && req.files[fieldName] && req.files[fieldName][0]) {
+          hasMultipleFormats = true;
+          const file = req.files[fieldName][0];
+          const fileKey = await uploadToR2(file, "products");
+
+          files.push({
+            format,
+            key: fileKey,
+            fileName: file.originalname,
+            fileSize: file.size,
+            isPrimary: format === "JPEG" || files.length === 0,
+          });
         }
       }
 
-      // ALWAYS generate preview video for video files, even if preview images exist
-      if (isVideoFile(file.originalname)) {
-        try {
-          // Generate thumbnail if no preview images were provided
-          if (previewImages.length === 0) {
-            console.log("Generating thumbnail for video:", file.originalname);
-            const thumbnailBuffer = await generateVideoThumbnail(
+      // Legacy single file handling
+      let fileKey, fileName, fileSize;
+      if (hasMultipleFormats) {
+        // Find primary file
+        const primaryFile = files.find((f) => f.isPrimary) || files[0];
+        fileKey = primaryFile.key;
+        fileName = primaryFile.fileName;
+        fileSize = primaryFile.fileSize;
+      } else if (req.files && req.files.file && req.files.file[0]) {
+        const file = req.files.file[0];
+        fileKey = await uploadToR2(file, "products");
+        fileName = file.originalname;
+        fileSize = file.size;
+
+        // Handle video preview generation
+        if (isVideoFile(file.originalname)) {
+          try {
+            if (
+              !req.files.previewImages ||
+              req.files.previewImages.length === 0
+            ) {
+              const thumbnailBuffer = await generateVideoThumbnail(
+                file.buffer,
+                file.originalname,
+              );
+              const thumbnail = {
+                buffer: thumbnailBuffer,
+                originalname: `thumbnail_${Date.now()}.jpg`,
+                mimetype: "image/jpeg",
+              };
+              const thumbnailKey = await uploadToR2(thumbnail, "previews");
+              previewImages.push(thumbnailKey);
+            }
+
+            const previewVideoBuffer = await generateVideoPreview(
               file.buffer,
               file.originalname,
             );
-
-            // Create a thumbnail object to upload
-            const thumbnail = {
-              buffer: thumbnailBuffer,
-              originalname: `thumbnail_${Date.now()}.jpg`,
-              mimetype: "image/jpeg",
+            const previewVideo = {
+              buffer: previewVideoBuffer,
+              originalname: `preview_${Date.now()}.mp4`,
+              mimetype: "video/mp4",
             };
-
-            const thumbnailKey = await uploadToR2(thumbnail, "previews");
-            previewImages.push(thumbnailKey);
-            console.log("Video thumbnail generated successfully");
+            previewVideoKey = await uploadToR2(previewVideo, "previews");
+          } catch (error) {
+            console.error("Error generating video preview:", error);
           }
+        }
+      } else {
+        return res
+          .status(400)
+          .json({ error: "At least one product file is required" });
+      }
 
-          // Generate 5-second preview video
-          console.log("Generating 5-second preview video...");
-          const previewVideoBuffer = await generateVideoPreview(
-            file.buffer,
-            file.originalname,
-          );
-
-          const previewVideo = {
-            buffer: previewVideoBuffer,
-            originalname: `preview_${Date.now()}.mp4`,
-            mimetype: "video/mp4",
-          };
-
-          previewVideoKey = await uploadToR2(previewVideo, "previews");
-          console.log("Preview video generated successfully");
-        } catch (error) {
-          console.error("Error generating video preview:", error);
-          console.error("Error details:", error.stack);
-          // Continue without preview - not critical
+      // Handle preview images
+      if (req.files && req.files.previewImages) {
+        for (const image of req.files.previewImages) {
+          const imageKey = await uploadToR2(image, "previews");
+          previewImages.push(imageKey);
         }
       }
 
@@ -163,11 +268,13 @@ router.post(
         price,
         isFree: isFree === "true" || isFree === true,
         isActive: true,
+        productType: productType || "other",
         previewImages,
         previewVideo: previewVideoKey,
+        files: files.length > 0 ? files : undefined,
         fileKey,
-        fileName: file.originalname,
-        fileSize: file.size,
+        fileName,
+        fileSize,
       });
 
       const populatedProduct = await Product.findById(product._id).populate(

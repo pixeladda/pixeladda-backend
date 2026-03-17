@@ -32,16 +32,44 @@ const productSchema = new mongoose.Schema({
   previewVideo: {
     type: String, // Store preview video key for video products
   },
+  // Legacy fields (kept for backward compatibility)
   fileKey: {
     type: String,
-    required: true,
   },
   fileName: {
     type: String,
-    required: true,
   },
   fileSize: {
     type: Number,
+  },
+  // New file system - supports multiple formats
+  files: [
+    {
+      format: {
+        type: String, // EPS, AI, CDR, PSD, JPEG, PNG, MP4, MOV, etc.
+        required: true,
+      },
+      key: {
+        type: String, // R2 storage key
+        required: true,
+      },
+      fileName: {
+        type: String,
+        required: true,
+      },
+      fileSize: {
+        type: Number,
+      },
+      isPrimary: {
+        type: Boolean,
+        default: false,
+      },
+    },
+  ],
+  productType: {
+    type: String,
+    enum: ["vector", "raster", "video", "template", "other"],
+    default: "other",
   },
   downloads: {
     type: Number,

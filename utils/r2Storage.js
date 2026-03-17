@@ -63,10 +63,32 @@ const getSignedDownloadUrl = async (fileKey, fileName) => {
     );
   }
 
+  // Determine Content-Type from file extension
+  const ext = fileName.split(".").pop().toLowerCase();
+  const contentTypeMap = {
+    pdf: "application/pdf",
+    zip: "application/zip",
+    psd: "application/octet-stream",
+    ai: "application/postscript",
+    eps: "application/postscript",
+    cdr: "application/coreldraw",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    svg: "image/svg+xml",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+    avi: "video/x-msvideo",
+  };
+
+  const contentType = contentTypeMap[ext] || "application/octet-stream";
+
   const command = new GetObjectCommand({
     Bucket: BUCKET_NAME,
     Key: fileKey,
-    ResponseContentDisposition: `attachment; filename="${fileName}"`,
+    ResponseContentDisposition: `attachment; filename="${encodeURIComponent(fileName)}"`,
+    ResponseContentType: contentType,
   });
 
   const url = await getSignedUrl(s3Client, command, { expiresIn: 3600 });

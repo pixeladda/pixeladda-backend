@@ -87,11 +87,13 @@ const productRoutes = require("./routes/products");
 const orderRoutes = require("./routes/orders");
 const paymentRoutes = require("./routes/payment");
 const adminRoutes = require("./routes/admin");
+const downloadRoutes = require("./routes/downloads");
 
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/downloads", downloadRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/admin", adminRoutes);
