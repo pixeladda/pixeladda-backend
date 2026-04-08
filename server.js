@@ -88,6 +88,7 @@ const orderRoutes = require("./routes/orders");
 const paymentRoutes = require("./routes/payment");
 const adminRoutes = require("./routes/admin");
 const downloadRoutes = require("./routes/downloads");
+const subscriptionRoutes = require("./routes/subscriptions");
 
 // API Routes
 app.use("/api/auth", authRoutes);
@@ -97,6 +98,7 @@ app.use("/api/downloads", downloadRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 
 // Health Check
 app.get("/api", (req, res) => {

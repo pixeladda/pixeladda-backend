@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Product = require("../models/Product");
+const User = require("../models/User");
 const { protect } = require("../middleware/auth");
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedDownloadUrl } = require("../utils/r2Storage");
@@ -9,6 +10,10 @@ const {
   getMimeType,
 } = require("../utils/fileFormatHandler");
 const { resizeImage, isImageFile } = require("../utils/imageProcessor");
+const {
+  canUserDownload,
+  resetMonthlyDownloadsIfNeeded,
+} = require("../utils/subscriptionHelper");
 const archiver = require("archiver");
 const { Readable } = require("stream");
 
@@ -54,6 +59,18 @@ router.post("/:productId/download", protect, async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
+    // Get user with full details
+    const user = await User.findById(req.user._id);
+
+    // Reset monthly downloads if needed
+    resetMonthlyDownloadsIfNeeded(user);
+
+    // Check if user can download based on subscription
+    const downloadCheck = canUserDownload(user, product);
+    if (!downloadCheck.allowed) {
+      return res.status(403).json({ error: downloadCheck.reason });
+    }
+
     const options = getDownloadOptions(product);
     const selectedOption = options.find(
       (opt) => opt.key === optionKey || opt.type === "single",
@@ -63,7 +80,17 @@ router.post("/:productId/download", protect, async (req, res) => {
       return res.status(400).json({ error: "Invalid download option" });
     }
 
-    // Increment download count
+    // Track the download
+    user.downloadHistory.push({
+      product: product._id,
+      downloadedAt: new Date(),
+      format: selectedOption.key,
+      size: size,
+    });
+    user.monthlyDownloads += 1;
+    await user.save();
+
+    // Increment product download count
     product.downloads += 1;
     await product.save();
 

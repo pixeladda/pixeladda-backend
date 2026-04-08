@@ -468,4 +468,143 @@ router.get("/:id/download", async (req, res) => {
   }
 });
 
+// Get trending products
+router.get("/special/trending", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 12;
+
+    const products = await Product.find({ isActive: true, isTrending: true })
+      .populate("category", "name slug")
+      .sort({ trendingScore: -1 })
+      .limit(limit);
+
+    const productsWithUrls = await Promise.all(
+      products.map((product) => addSignedUrlsToProduct(product)),
+    );
+
+    res.json(productsWithUrls);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get featured products
+router.get("/special/featured", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 12;
+
+    const products = await Product.find({ isActive: true, isFeatured: true })
+      .populate("category", "name slug")
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    const productsWithUrls = await Promise.all(
+      products.map((product) => addSignedUrlsToProduct(product)),
+    );
+
+    res.json(productsWithUrls);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get popular products (by downloads)
+router.get("/special/popular", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 12;
+
+    const products = await Product.find({ isActive: true })
+      .populate("category", "name slug")
+      .sort({ downloads: -1, views: -1 })
+      .limit(limit);
+
+    const productsWithUrls = await Promise.all(
+      products.map((product) => addSignedUrlsToProduct(product)),
+    );
+
+    res.json(productsWithUrls);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get latest products
+router.get("/special/latest", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 12;
+
+    const products = await Product.find({ isActive: true })
+      .populate("category", "name slug")
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    const productsWithUrls = await Promise.all(
+      products.map((product) => addSignedUrlsToProduct(product)),
+    );
+
+    res.json(productsWithUrls);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search products by tags
+router.get("/search/tags", async (req, res) => {
+  try {
+    const { tags, limit = 20 } = req.query;
+
+    if (!tags) {
+      return res.status(400).json({ error: "Tags parameter is required" });
+    }
+
+    const tagsArray = Array.isArray(tags)
+      ? tags
+      : tags.split(",").map((t) => t.trim().toLowerCase());
+
+    const products = await Product.find({
+      isActive: true,
+      tags: { $in: tagsArray },
+    })
+      .populate("category", "name slug")
+      .sort({ trendingScore: -1 })
+      .limit(parseInt(limit));
+
+    const productsWithUrls = await Promise.all(
+      products.map((product) => addSignedUrlsToProduct(product)),
+    );
+
+    res.json(productsWithUrls);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Increment view count
+router.post("/:id/view", async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    product.views += 1;
+    await product.save();
+
+    res.json({ success: true, views: product.views });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all unique tags
+router.get("/meta/tags", async (req, res) => {
+  try {
+    const tags = await Product.distinct("tags", { isActive: true });
+    res.json(tags.sort());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
